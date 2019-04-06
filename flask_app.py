@@ -1,7 +1,7 @@
 from flask import Flask, request
 import logging
 import json
-from geo import get_geo_info, get_distance, is_address, find_coords
+from geo import get_geo_info, get_distance, is_address, find_coords, find_object, get_image_id
 
 # https://SkyNET0707.pythonanywhere.com/post
 # https://dialogs.yandex.ru/developer/skills/b245f1df-94f4-44e2-aadd-348158a0c34f/draft/test
@@ -34,11 +34,15 @@ def handle_dialog(res, req):
     user_id = req['session']['user_id']
 
     if req['session']['new']:
-        res['response']['text'] = 'Привет! Я могу найти ближайший интересующий тебя объект и показать дорогу! Как я могу к тебе обращаться?'
+        res['response']['text'] = 'Привет! Я могу найти ближайшую интересующую тебя организацию, например, магазин, аптеку или кинотеатр, и показать её на карте! Как я могу к тебе обращаться?'
         sessionStorage[user_id] = {
             'first_name': None,
             'coords': None,
-            'point': 0
+            'object_name': None,
+            'result': None,
+            'image_id': None,
+            'point': 0,
+            'buttons': {}
         }
         return
 
@@ -57,8 +61,47 @@ def handle_dialog(res, req):
         else:
             sessionStorage[user_id]['coords'] = address
             res['response']['text'] = f'Отлично, теперь я могу тебе помочь. Что надо найти поблизости?'
+            sessionStorage[user_id]['buttons']['change_address'] = {
+                    'title': 'Изменить адрес',
+                    'hide': True
+                }
+    elif req['request']['original_utterance'] == 'Изменить адрес':
+        del sessionStorage[user_id]['buttons']['show_map']
+        sessionStorage[user_id]['coords'] = None
+        res['response']['text'] = 'Хорошо, где же ты теперь?'
+    elif sessionStorage[user_id]['result'] and req['request']['original_utterance'] == 'Показать на карте':
+        object_name = sessionStorage[user_id]['object_name']
+        cur_coords = sessionStorage[user_id]['coords']
+        coords = sessionStorage[user_id]['result']['coords']
+        coords_hrf = sessionStorage[user_id]['result']['coords_hrf']
+        if sessionStorage[user_id]['image_id'] is None:
+            sessionStorage[user_id]['image_id'] = get_image_id(sessionStorage[user_id]['result'], sessionStorage[user_id]['coords'])
+        res['response']['text'] = f'Объект "{object_name}" на карте'
+        res['response']['card'] = {}
+        res['response']['card']['type'] = 'BigImage'
+        res['response']['card']['title'] = f'Результат по запросу "{object_name}"'
+        res['response']['card']['image_id'] = sessionStorage[user_id]['image_id']
+        res['response']['card']['button'] = {}
+        res['response']['card']['button']['text'] = 'Найти в Яндекс.Картах'
+        res['response']['card']['button']['url'] = f'https://yandex.ru/maps/?clid=9403&ll={str(coords[0])},{str(coords[1])}&z=14,8&pt={str(coords_hrf)},pm2bm'
     else:
-        res['response']['text'] = f'Твои координаты: {sessionStorage[user_id]["coords"]}'
+        object_name = req['request']['original_utterance']
+        sessionStorage[user_id]['object_name'] = object_name
+        info = find_object(object_name, sessionStorage[user_id]['coords'])
+        sessionStorage[user_id]['image_id'] = None
+        if not info:
+            res['response']['text'] = f'К сожалению, объект "{object_name}" не найден. Попробуй изменить запрос или адрес.'
+            del sessionStorage[user_id]['buttons']['show_map']
+        else:
+            text = f'название: {info["name"]}; адрес: {info["address"]}; время работы: {info["hours"]}'
+
+            res['response']['text'] = f'Объект "{object_name}" найден: ' + text
+            sessionStorage[user_id]['buttons']['show_map'] = {
+                    'title': 'Показать на карте',
+                    'hide': True
+                }
+            sessionStorage[user_id]['result'] = info
+    res['response']['buttons'] = list(sessionStorage[user_id]['buttons'].values())
 
 def get_first_name(req):
     for entity in req['request']['nlu']['entities']:
