@@ -2,6 +2,9 @@ import requests
 import sys
 from math import sin, cos, sqrt, atan2, radians
 
+token = 'AQAAAAAgS2olAAT7o3M-aOYZyEIrstjmDkHoo7c'
+skill_id = '8133ff99-d882-481e-831e-67445dd00c26'
+search_api_key = 'dda3ddba-c9ea-4ead-9010-f43fbc15c6e3'
 
 def get_geo_info(city, type):
     url = "https://geocode-maps.yandex.ru/1.x/"
@@ -74,9 +77,9 @@ def find_coords(address):
 
     return toponym_coordinates
 
-def find_object(name, address_ll):
+def find_object(name, address_ll, ignore=0):
     search_api_server = "https://search-maps.yandex.ru/v1/"
-    api_key = "dda3ddba-c9ea-4ead-9010-f43fbc15c6e3"
+    api_key = search_api_key
 
     coords1 = address_ll.split(',')
     coords1 = [float(coords1[0]), float(coords1[1])]
@@ -95,26 +98,67 @@ def find_object(name, address_ll):
 
         # Преобразуем ответ в json-объект
         json_response = response.json()
-
+        if len(json_response['features']) <= ignore:
+            return False
         # Получаем первую найденную организацию.
-        organization = json_response["features"][0]
+        orgs = []
+        for org in json_response["features"]:
+            distance = get_distance(coords1, org["geometry"]["coordinates"])
+            orgs.append([distance, org])
+        orgs.sort()
+        organization = orgs[ignore][1]
     except Exception:
         return False
     # Название организации.
-    org_name = organization["properties"]["CompanyMetaData"]["name"]
+    org_name = organization["properties"]["CompanyMetaData"].get("name", 'неизвестно')
     # Адрес организации.
-    org_address = organization["properties"]["CompanyMetaData"]["address"]
+    org_address = organization["properties"]["CompanyMetaData"].get("address", 'неизвестно')
 
-    hours = organization["properties"]["CompanyMetaData"]["Hours"]
-
-    if "TwentyFourHours" in str(hours["Availabilities"][0]) and "Everyday" in str(hours["Availabilities"][0]):
-        hours = '24/7'
-    elif "TwentyFourHours" in str(hours["Availabilities"][0]):
-        hours = '24, ' + hours['text']
-    else:
-        hours = 'с ' + hours["Availabilities"][0]['Intervals'][0]['from'] + \
-                ' до ' + hours["Availabilities"][0]['Intervals'][0]['to']
-
+    hours = organization["properties"]["CompanyMetaData"].get("Hours", 'неизвестно')
+    days = {'Weekdays': 'по будням',
+            'Weekend': 'по выходным',
+            'Everyday': 'ежедневно',
+            'Sunday': 'воскресенье',
+            'Monday': 'понедельник',
+            'Tuesday': 'вторник',
+            'Wednesday': 'среда',
+            'Thursday': 'четверг',
+            'Friday': 'пятница',
+            'Saturday': 'суббота'
+            }
+    if hours != 'неизвестно':
+        hours_a = []
+        for availability in hours["Availabilities"]:
+            if "TwentyFourHours" in str(availability) and "Everyday" in str(availability):
+                hours_a.append('24/7')
+            elif "TwentyFourHours" in str(availability):
+                text = 'круглосуточно'
+                f = False
+                for day in days.keys():
+                    if availability.get(day, False):
+                        f = True
+                        text += ', ' + days[day]
+                if not f:
+                    if hours.get('text', False):
+                        text += ', ' + hours['text']
+                    else:
+                        text += ', рабочие дни неизвестны'
+                hours_a.append(text)
+            else:
+                text = 'с ' + availability['Intervals'][0]['from'][:-3] + \
+                        ' до ' + availability['Intervals'][0]['to'][:-3]
+                f = False
+                for day in days.keys():
+                    if availability.get(day, False):
+                        f = True
+                        text += ', ' + days[day]
+                if not f:
+                    if hours.get('text', False):
+                        text += ', ' + hours['text']
+                    else:
+                        text += ', рабочие дни неизвестны'
+                hours_a.append(text)
+        hours = ' / '.join(hours_a)
     # Получаем координаты ответа.
     point = organization["geometry"]["coordinates"]
     org_point = "{0},{1}".format(point[0], point[1])
@@ -133,8 +177,8 @@ def get_image_id(info, address_ll):
 
     coords = [(coords1[0] + coords2[0]) / 2, (coords1[1] + coords2[1]) / 2]
 
-    x = abs(coords1[0] - coords2[0]) * 1.7
-    y = abs(coords1[1] - coords2[1]) * 1.3
+    x = abs(coords1[0] - coords2[0]) * 1.4
+    y = abs(coords1[1] - coords2[1]) * 1.4
 
     #long = 'Расстояние до объекта: ' + str(round(get_distance(coords2, coords1))) + ' м'
 
@@ -154,7 +198,7 @@ def get_image_id(info, address_ll):
     except Exception as er:
         print(er)
 
-    url = 'https://dialogs.yandex.net/api/v1/skills/8133ff99-d882-481e-831e-67445dd00c26/images'
+    url = f'https://dialogs.yandex.net/api/v1/skills/{skill_id}/images'
     file = {'file': response.content}
-    image_id = requests.post(url, files=file, headers={'Authorization': 'OAuth AQAAAAAgS2olAAT7o3M-aOYZyEIrstjmDkHoo7c'}).json()['image']['id']
+    image_id = requests.post(url, files=file, headers={'Authorization': f'OAuth {token}'}).json()['image']['id']
     return image_id
