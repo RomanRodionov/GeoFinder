@@ -1,10 +1,16 @@
 import requests
 import sys
+import os
 from math import sin, cos, sqrt, atan2, radians
 
 token = 'AQAAAAAgS2olAAT7o3M-aOYZyEIrstjmDkHoo7c'
 skill_id = '8133ff99-d882-481e-831e-67445dd00c26'
 search_api_key = 'dda3ddba-c9ea-4ead-9010-f43fbc15c6e3'
+
+def path(filename):
+    my_dir = os.path.dirname(__file__)
+    json_file_path = os.path.join(my_dir, filename)
+    return json_file_path
 
 def get_geo_info(city, type):
     url = "https://geocode-maps.yandex.ru/1.x/"
@@ -113,6 +119,18 @@ def find_object(name, address_ll, ignore=0):
     org_name = organization["properties"]["CompanyMetaData"].get("name", 'неизвестно')
     # Адрес организации.
     org_address = organization["properties"]["CompanyMetaData"].get("address", 'неизвестно')
+    # Сайт организации
+    org_url = organization["properties"]["CompanyMetaData"].get('url', False)
+
+    contact_info_dict = {}
+    for contact in organization["properties"]["CompanyMetaData"].get('Phones', list()):
+        contact_info_dict[contact['type']] = contact_info_dict.get(contact['type'], []) + [contact['formatted']]
+    contact_info = []
+    for key in contact_info_dict:
+        contact_info.append(key.upper() + ': ' + ', '.join(contact_info_dict[key]))
+    contact_info = '; '.join(contact_info)
+    if contact_info == '':
+        contact_info = False
 
     hours = organization["properties"]["CompanyMetaData"].get("Hours", 'неизвестно')
     days = {'Weekdays': 'по будням',
@@ -162,7 +180,7 @@ def find_object(name, address_ll, ignore=0):
     # Получаем координаты ответа.
     point = organization["geometry"]["coordinates"]
     org_point = "{0},{1}".format(point[0], point[1])
-    info = {'coords_hrf': org_point, 'coords': point, 'name': org_name, 'address': org_address, 'hours': hours}
+    info = {'coords_hrf': org_point, 'coords': point, 'name': org_name, 'address': org_address, 'hours': hours, 'url': org_url, 'contact': contact_info}
 
     return info
 

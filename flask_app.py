@@ -1,8 +1,8 @@
 from flask import Flask, request
 import logging
 import json
-from geo import get_geo_info, get_distance, is_address, find_coords, find_object, get_image_id
-
+from geo import get_geo_info, get_distance, is_address, find_coords, find_object, get_image_id, path
+from random import choice
 # https://SkyNET0707.pythonanywhere.com/post
 # https://dialogs.yandex.ru/developer/skills/b245f1df-94f4-44e2-aadd-348158a0c34f/draft/test
 
@@ -43,11 +43,16 @@ def handle_dialog(res, req):
             'image_id': None,
             'point': 0,
             'ignore': 0,
-            'buttons': {}
+            'buttons': {},
+            'contact': None
         }
         return
-
-    if sessionStorage[user_id]['first_name'] is None:
+    if req['request']['original_utterance'] == 'Помощь':
+        file = open(path('dialogs.json'), 'r', encoding="utf-8")
+        text = json.loads(file.read())['help']
+        file.close()
+        res['response']['text'] = text
+    elif sessionStorage[user_id]['first_name'] is None:
         first_name = get_first_name(req)
         if first_name is None:
             res['response']['text'] = 'Не расслышала имя. Повтори, пожалуйста!'
@@ -70,6 +75,12 @@ def handle_dialog(res, req):
         sessionStorage[user_id]['buttons'].pop('change_address', None)
         sessionStorage[user_id]['coords'] = None
         res['response']['text'] = 'Хорошо, где же ты теперь?'
+    elif sessionStorage[user_id]['result'] and req['request']['original_utterance'] == 'Сайт организации':
+        sessionStorage[user_id]['buttons'].pop('site', None)
+        res['response']['text'] = choice(['Ок', 'Хорошо', 'Ладно', 'Окей'])
+    elif sessionStorage[user_id]['result'] and req['request']['original_utterance'] == 'Контактные данные':
+        sessionStorage[user_id]['buttons'].pop('contact', None)
+        res['response']['text'] = sessionStorage[user_id]['contact']
     elif sessionStorage[user_id]['result'] and req['request']['original_utterance'] == 'Показать на карте':
         sessionStorage[user_id]['buttons'].pop('show_map', None)
         object_name = sessionStorage[user_id]['object_name']
@@ -96,6 +107,8 @@ def handle_dialog(res, req):
                 'text'] = f'Больше объектов "{object_name}" не найдено. Попробуй изменить запрос или адрес.'
             sessionStorage[user_id]['buttons'].pop('show_map', None)
             sessionStorage[user_id]['buttons'].pop('skip', None)
+            sessionStorage[user_id]['buttons'].pop('contact', None)
+            sessionStorage[user_id]['buttons'].pop('url', None)
             sessionStorage[user_id]['ignore'] = 0
         else:
             text = f'название: {info["name"]}; адрес: {info["address"]}; время работы: {info["hours"]}'
@@ -105,6 +118,18 @@ def handle_dialog(res, req):
                 'title': 'Показать на карте',
                 'hide': True
             }
+            if info['url']:
+                sessionStorage[user_id]['buttons']['site'] = {
+                    'title': 'Сайт организации',
+                    "url": info['url'],
+                    'hide': True
+                }
+            if info['contact']:
+                sessionStorage[user_id]['contact'] = info['contact']
+                sessionStorage[user_id]['buttons']['contact'] = {
+                    'title': 'Контактные данные',
+                    'hide': True
+                }
             sessionStorage[user_id]['buttons']['skip'] = {
                 'title': 'Показать другой результат',
                 'hide': True
@@ -113,6 +138,8 @@ def handle_dialog(res, req):
     else:
         sessionStorage[user_id]['buttons'].pop('show_map', None)
         sessionStorage[user_id]['buttons'].pop('skip', None)
+        sessionStorage[user_id]['buttons'].pop('site', None)
+        sessionStorage[user_id]['buttons'].pop('contact', None)
         object_name = req['request']['original_utterance']
         sessionStorage[user_id]['object_name'] = object_name
         sessionStorage[user_id]['ignore'] = 0
@@ -123,10 +150,21 @@ def handle_dialog(res, req):
             sessionStorage[user_id]['buttons'].pop('show_map', None)
         else:
             text = f'название: {info["name"]}; адрес: {info["address"]}; время работы: {info["hours"]}'
-
             res['response']['text'] = f'Объект "{object_name}" найден: ' + text
             sessionStorage[user_id]['buttons']['show_map'] = {
                     'title': 'Показать на карте',
+                    'hide': True
+                }
+            if info['url']:
+                sessionStorage[user_id]['buttons']['site'] = {
+                    'title': 'Сайт организации',
+                    'url': info['url'],
+                    'hide': True
+                }
+            if info['contact']:
+                sessionStorage[user_id]['contact'] = info['contact']
+                sessionStorage[user_id]['buttons']['contact'] = {
+                    'title': 'Контактные данные',
                     'hide': True
                 }
             sessionStorage[user_id]['buttons']['skip'] = {
@@ -134,7 +172,10 @@ def handle_dialog(res, req):
                 'hide': True
             }
             sessionStorage[user_id]['result'] = info
-    res['response']['buttons'] = list(sessionStorage[user_id]['buttons'].values())
+    res['response']['buttons'] = list(sessionStorage[user_id]['buttons'].values()) + [{
+                    'title': 'Помощь',
+                    'hide': True
+                }]
 
 def get_first_name(req):
     for entity in req['request']['nlu']['entities']:
