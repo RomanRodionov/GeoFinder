@@ -1,16 +1,24 @@
 import requests
-import sys
 import os
 from math import sin, cos, sqrt, atan2, radians
+import json
 
-token = 'AQAAAAAgS2olAAT7o3M-aOYZyEIrstjmDkHoo7c'
-skill_id = '8133ff99-d882-481e-831e-67445dd00c26'
-search_api_key = 'dda3ddba-c9ea-4ead-9010-f43fbc15c6e3'
 
 def path(filename):
     my_dir = os.path.dirname(__file__)
     json_file_path = os.path.join(my_dir, filename)
     return json_file_path
+
+
+file = open(path('token.json'), 'r', encoding="utf-8")
+tokens = json.loads(file.read())
+file.close()
+
+token = tokens["token"]
+skill_id = tokens["skill_id"]
+search_api_key = tokens["search_api_key"]
+del tokens
+
 
 def get_geo_info(city, type):
     url = "https://geocode-maps.yandex.ru/1.x/"
@@ -67,6 +75,7 @@ def is_address(address):
         return True
     return False
 
+
 def find_coords(address):
     url = "https://geocode-maps.yandex.ru/1.x/"
 
@@ -82,6 +91,7 @@ def find_coords(address):
     toponym_coordinates = ','.join(toponym["Point"]["pos"].split())
 
     return toponym_coordinates
+
 
 def find_object(name, address_ll, ignore=0):
     search_api_server = "https://search-maps.yandex.ru/v1/"
@@ -113,6 +123,11 @@ def find_object(name, address_ll, ignore=0):
             orgs.append([distance, org])
         orgs.sort()
         organization = orgs[ignore][1]
+        distance = int(orgs[ignore][0] * 1000)
+        if distance >= 1000:
+            distance = str(distance // 1000) + ' км ' + str(distance % 1000) + ' м'
+        else:
+            distance = str(distance) + ' м'
     except Exception:
         return False
     # Название организации.
@@ -164,7 +179,7 @@ def find_object(name, address_ll, ignore=0):
                 hours_a.append(text)
             else:
                 text = 'с ' + availability['Intervals'][0]['from'][:-3] + \
-                        ' до ' + availability['Intervals'][0]['to'][:-3]
+                       ' до ' + availability['Intervals'][0]['to'][:-3]
                 f = False
                 for day in days.keys():
                     if availability.get(day, False):
@@ -180,9 +195,11 @@ def find_object(name, address_ll, ignore=0):
     # Получаем координаты ответа.
     point = organization["geometry"]["coordinates"]
     org_point = "{0},{1}".format(point[0], point[1])
-    info = {'coords_hrf': org_point, 'coords': point, 'name': org_name, 'address': org_address, 'hours': hours, 'url': org_url, 'contact': contact_info}
+    info = {'coords_hrf': org_point, 'coords': point, 'name': org_name, 'address': org_address, 'hours': hours,
+            'url': org_url, 'contact': contact_info, 'distance': distance}
 
     return info
+
 
 def get_image_id(info, address_ll):
     point = info['coords']
@@ -195,12 +212,9 @@ def get_image_id(info, address_ll):
 
     coords = [(coords1[0] + coords2[0]) / 2, (coords1[1] + coords2[1]) / 2]
 
-    x = abs(coords1[0] - coords2[0]) * 1.4
-    y = abs(coords1[1] - coords2[1]) * 1.4
+    x = abs(coords1[0] - coords2[0]) * 1.3
+    y = abs(coords1[1] - coords2[1]) * 1.3
 
-    #long = 'Расстояние до объекта: ' + str(round(get_distance(coords2, coords1))) + ' м'
-
-    #info = [org_name, org_address, 'Режим работы: ' + hours, long]
     # Собираем параметры для запроса к StaticMapsAPI:
     map_params = {
         "ll": ",".join([str(coords[0]), str(coords[1])]),
