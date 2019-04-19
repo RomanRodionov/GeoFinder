@@ -50,7 +50,7 @@ def handle_dialog(res, req):
             'contact': None
         }
         return
-    if req['request']['original_utterance'] == 'Помощь':
+    if req['request']['original_utterance'].lower() in ['помощь', 'помоги', 'что ты умеешь', 'что ты умеешь?']:
         file = open(path('dialogs.json'), 'r', encoding="utf-8")
         text = json.loads(file.read())['help']
         file.close()
