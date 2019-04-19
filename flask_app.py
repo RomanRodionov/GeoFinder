@@ -4,9 +4,6 @@ import json
 from geo import is_address, find_coords, find_object, get_image_id, path
 from random import choice
 
-# https://SkyNET0707.pythonanywhere.com/post
-# https://dialogs.yandex.ru/developer/skills/b245f1df-94f4-44e2-aadd-348158a0c34f/draft/test
-
 app = Flask(__name__)
 
 logging.basicConfig(level=logging.INFO, filename='app.log', format='%(asctime)s %(levelname)s %(name)s %(message)s')
@@ -50,11 +47,13 @@ def handle_dialog(res, req):
             'contact': None
         }
         return
+    # Ответ на запрос об умениях навыка
     if req['request']['original_utterance'].lower() in ['помощь', 'помоги', 'что ты умеешь', 'что ты умеешь?']:
         file = open(path('dialogs.json'), 'r', encoding="utf-8")
         text = json.loads(file.read())['help']
         file.close()
         res['response']['text'] = text
+    # Ответ на введённый адрес
     elif sessionStorage[user_id]['coords'] is None:
         address = get_address(req)
         if not address:
@@ -66,10 +65,12 @@ def handle_dialog(res, req):
                 'title': 'Изменить адрес',
                 'hide': True
             }
+    # Ответ на запрос об изменении пользователем его местоположения
     elif req['request']['original_utterance'] == 'Изменить адрес':
         sessionStorage[user_id]['buttons'].pop('change_address', None)
         sessionStorage[user_id]['coords'] = None
         res['response']['text'] = 'Хорошо, где же ты теперь?'
+    # Ответы на запросы для получения информации об организации
     elif sessionStorage[user_id]['result'] and req['request']['original_utterance'] == 'Сайт организации':
         sessionStorage[user_id]['buttons'].pop('site', None)
         res['response']['text'] = choice(['Ок', 'Хорошо', 'Ладно', 'Окей'])
@@ -95,6 +96,8 @@ def handle_dialog(res, req):
         res['response']['card']['button'][
             'url'] = f'https://yandex.ru/maps/?clid=9403&ll={str(coords[0])},' \
                      f'{str(coords[1])}&z=14,8&pt={str(coords_hrf)},pm2bm'
+    # Ответ на запрос для получения другого результата
+    # Результаты не повторяются и идут в порядке удаления от пользователя
     elif sessionStorage[user_id]['result'] and req['request']['original_utterance'] == 'Показать другой результат':
         sessionStorage[user_id]['ignore'] += 1
         object_name = sessionStorage[user_id]['object_name']
@@ -134,6 +137,7 @@ def handle_dialog(res, req):
                 'hide': True
             }
             sessionStorage[user_id]['result'] = info
+    # Ответ на введённый пользовательский запрос для поиска объекта
     else:
         sessionStorage[user_id]['buttons'].pop('show_map', None)
         sessionStorage[user_id]['buttons'].pop('skip', None)
@@ -179,12 +183,7 @@ def handle_dialog(res, req):
     }]
 
 
-def get_first_name(req):
-    for entity in req['request']['nlu']['entities']:
-        if entity['type'] == 'YANDEX.FIO':
-            return entity['value'].get('first_name', None)
-
-
+# Получение координат местоположения пользователя
 def get_address(req):
     address = []
     city = False

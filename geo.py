@@ -20,27 +20,7 @@ search_api_key = tokens["search_api_key"]
 del tokens
 
 
-def get_geo_info(city, type):
-    url = "https://geocode-maps.yandex.ru/1.x/"
-
-    params = {
-        'geocode': city,
-        'format': 'json'
-    }
-
-    response = requests.get(url, params)
-    json = response.json()
-
-    if type == 'country':
-        return json['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['metaDataProperty'][
-            'GeocoderMetaData']['AddressDetails']['Country']['CountryName']
-    elif type == 'coordinates':
-        point_str = json['response']['GeoObjectCollection']['featureMember'][0]['GeoObject']['Point']['pos']
-        point_array = [float(x) for x in point_str.split(' ')]
-
-        return point_array
-
-
+# Поиск расстояния до объекта
 def get_distance(p1, p2):
     R = 6373.0
 
@@ -60,6 +40,7 @@ def get_distance(p1, p2):
     return distance
 
 
+# Определение существования адреса
 def is_address(address):
     url = "https://geocode-maps.yandex.ru/1.x/"
 
@@ -76,6 +57,7 @@ def is_address(address):
     return False
 
 
+# Поиск координат по адресу
 def find_coords(address):
     url = "https://geocode-maps.yandex.ru/1.x/"
 
@@ -93,6 +75,7 @@ def find_coords(address):
     return toponym_coordinates
 
 
+# Поиск объекта
 def find_object(name, address_ll, ignore=0):
     search_api_server = "https://search-maps.yandex.ru/v1/"
     api_key = search_api_key
