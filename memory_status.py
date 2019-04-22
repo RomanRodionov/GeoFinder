@@ -19,10 +19,10 @@ total = int(info['total'])
 used = int(info['used'])
 used_per = round(used / total * 100, 1)
 print(f"Использовано {str(used_per)}% памяти.")
-print("Удалить все изображения? y/n")
-flag = False
 
 # Спрашивает пользователя о дальнейших действиях
+print("Удалить все изображения? y/n")
+flag = False
 while not flag:
     ans = str(input())
     if ans == 'y':
