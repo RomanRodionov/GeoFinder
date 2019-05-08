@@ -14,10 +14,18 @@ file = open(path('token.json'), 'r', encoding="utf-8")
 tokens = json.loads(file.read())
 file.close()
 
+file = open(path('municipals.json'), 'r', encoding="utf-8-sig")
+data = json.loads(file.read())
+file.close()
+municipals = []
+for city in data:
+    municipals.append(city)
+
 token = tokens["token"]
 skill_id = tokens["skill_id"]
 search_api_key = tokens["search_api_key"]
 del tokens
+
 
 def delete_image(id):
     url = f'https://dialogs.yandex.net/api/v1/skills/{skill_id}/images/' + str(id)
@@ -49,8 +57,9 @@ def handle_dialog(res, req):
     if req['session']['new']:
         res['response'][
             'text'] = 'Привет! Я могу найти ближайшую интересующую тебя организацию, например,' \
-                      ' магазин, аптеку или кинотеатр, и показать её на карте! Мне нужно знать твоё местоположение.'
+                      ' магазин, аптеку или кинотеатр, и показать её на карте! Мне нужно знать твой город.'
         sessionStorage[user_id] = {
+            'city': None,
             'coords': None,
             'object_name': None,
             'result': None,
@@ -66,8 +75,26 @@ def handle_dialog(res, req):
         text = json.loads(file.read())['help']
         file.close()
         res['response']['text'] = text
+    elif sessionStorage[user_id]['city'] is None:
+        city = get_city(req)
+        if not city:
+            res['response']['text'] = 'Я не расслышала город. Можешь повторить?'
+        else:
+            sessionStorage[user_id]['city'] = city
+            if not sessionStorage[user_id]['coords']:
+                res['response']['text'] = f'Теперь мне нужно знать твой адрес'
+            else:
+                res['response']['text'] = f'Что надо найти?'
+            sessionStorage[user_id]['buttons']['change_address'] = {
+                'title': 'Изменить адрес',
+                'hide': True
+            }
+            sessionStorage[user_id]['buttons']['change_city'] = {
+                'title': 'Изменить город',
+                'hide': True
+            }
     elif sessionStorage[user_id]['coords'] is None:
-        address = get_address(req)
+        address = get_address(sessionStorage[user_id]['city'], req)
         if not address:
             res['response']['text'] = 'Мне кажется, адрес какой-то неправильный. Можешь повторить?'
         else:
@@ -77,7 +104,30 @@ def handle_dialog(res, req):
                 'title': 'Изменить адрес',
                 'hide': True
             }
+            sessionStorage[user_id]['buttons']['change_city'] = {
+                'title': 'Изменить город',
+                'hide': True
+            }
+    elif req['request']['original_utterance'].lower() == 'изменить город':
+        sessionStorage[user_id]['buttons'].pop('change_address', None)
+        sessionStorage[user_id]['buttons'].pop('show_map', None)
+        sessionStorage[user_id]['buttons'].pop('skip', None)
+        sessionStorage[user_id]['buttons'].pop('site', None)
+        sessionStorage[user_id]['buttons'].pop('contact', None)
+        if sessionStorage[user_id]['image_id']:
+            delete_image(sessionStorage[user_id]['image_id'])
+        sessionStorage[user_id]['buttons'].pop('change_city', None)
+        sessionStorage[user_id]['city'] = None
+        sessionStorage[user_id]['coords'] = None
+        res['response']['text'] = 'Хорошо, где же ты теперь?'
     elif req['request']['original_utterance'].lower() == 'изменить адрес':
+        sessionStorage[user_id]['buttons'].pop('change_city', None)
+        sessionStorage[user_id]['buttons'].pop('show_map', None)
+        sessionStorage[user_id]['buttons'].pop('skip', None)
+        sessionStorage[user_id]['buttons'].pop('site', None)
+        sessionStorage[user_id]['buttons'].pop('contact', None)
+        if sessionStorage[user_id]['image_id']:
+            delete_image(sessionStorage[user_id]['image_id'])
         sessionStorage[user_id]['buttons'].pop('change_address', None)
         sessionStorage[user_id]['coords'] = None
         res['response']['text'] = 'Хорошо, где же ты теперь?'
@@ -90,7 +140,6 @@ def handle_dialog(res, req):
     elif sessionStorage[user_id]['result'] and req['request']['original_utterance'].lower() == 'показать на карте':
         sessionStorage[user_id]['buttons'].pop('show_map', None)
         object_name = sessionStorage[user_id]['object_name']
-        cur_coords = sessionStorage[user_id]['coords']
         coords = sessionStorage[user_id]['result']['coords']
         coords_hrf = sessionStorage[user_id]['result']['coords_hrf']
         if sessionStorage[user_id]['image_id'] is None:
@@ -201,8 +250,7 @@ def get_first_name(req):
             return entity['value'].get('first_name', None)
 
 
-def get_address(req):
-    address = []
+def get_city(req):
     city = False
 
     for entity in req['request']['nlu']['entities']:
@@ -210,8 +258,23 @@ def get_address(req):
         if entity['type'] == 'YANDEX.GEO':
 
             if 'city' in entity['value'].keys():
-                address.append(entity['value']['city'])
-                city = True
+                city = entity['value']['city']
+
+    if not city:
+        for municipal in municipals:
+            if req['request']['original_utterance'].lower() in municipal.lower():
+                city = req['request']['original_utterance']
+                break
+
+    return city
+
+
+def get_address(city, req):
+    address = []
+
+    for entity in req['request']['nlu']['entities']:
+
+        if entity['type'] == 'YANDEX.GEO':
 
             if 'street' in entity['value'].keys():
                 address.append(entity['value']['street'])
@@ -222,12 +285,9 @@ def get_address(req):
             if 'airport' in entity['value'].keys():
                 address.append(entity['value']['airport'])
 
-    if len(address) == 0 or not city:
-        address = req['request']['original_utterance']
-        if not address:
-            return False
-    else:
-        address = ' '.join(address)
+    if len(address) == 0:
+        return False
+    address = city + ' '.join(address)
     if is_address(address):
         coords = find_coords(address)
         return coords
